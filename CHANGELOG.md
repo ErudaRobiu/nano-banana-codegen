@@ -6,6 +6,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-05-24
+
+### Added
+- **Shared library** `lib/nano-banana.js` with clean, opinionated wrappers around the SDK so Claude Code doesn't re-derive API patterns each time
+- **Quality presets**: `draft` (gemini-2.5-flash-image), `standard` (gemini-3.1-flash-image-preview), `hero` (gemini-3-pro-image-preview)
+- **Reference images**: `generateWithReferences()` for product/character consistency across multiple shots (up to 14 refs)
+- **Image editing**: `edit()` wrapper for modifying existing images (recolor, time-of-day, add/remove elements)
+- **Multi-turn chat**: `startChat()` for iterative refinement passes
+- **Google Search grounding**: `generate({ googleSearch: true })` for real-time data (weather, news, sports)
+- **Image Search grounding**: `generate({ imageSearch: true })` for visual reference accuracy (3.1 Flash only)
+- **Batch generation**: `generateBatch()` with rate-limit-aware pacing and progress callbacks
+- **Image optimization**: `optimize()` for JPEG (mozjpeg) and WebP via optional `sharp` dependency
+- **Thinking controls**: `thinkingLevel` and `includeThoughts` parameters exposed
+- **package.json**: declares dependencies, exposes the lib as a proper module, adds `npm run example:*` scripts
+- Six focused example scripts: `generate-basic`, `generate-with-references`, `edit-image`, `chat-iterate`, `with-google-search`, `generate-and-optimize`
+- Decision tree at the bottom of SKILL.md for picking the right tool
+
+### Changed
+- SKILL.md restructured around the new toolkit — Claude Code is now told to import library functions instead of writing the API call from scratch
+- README expanded with capability table, usage examples, and standalone-library mode
+
 ## [0.2.0] - 2026-05-24
 
 ### Changed

@@ -5,358 +5,328 @@ description: Automatically generate real images for web projects using the Nano 
 
 # Nano Banana Image Generation for Claude Code
 
-This skill enables Claude Code to generate real, high-quality images via the Nano Banana (Gemini) API and embed them directly into web projects — no placeholders, no gradients, no empty divs.
+This skill enables Claude Code to generate, edit, and iterate on real images via the Nano Banana (Gemini) API and embed them directly into web projects.
+
+It ships with a shared library (`lib/nano-banana.js`) and example scripts so Claude Code doesn't have to re-derive the API patterns each time.
 
 ---
 
 ## Prerequisites
 
-The user needs a Gemini API key stored as an environment variable:
+The user needs a Gemini API key in their environment:
 
 ```bash
 export GEMINI_API_KEY=your_key_here
 ```
 
-Get one free at: **aistudio.google.com/apikey**
+Get one free at: **aistudio.google.com/apikey**.
 
-If the key is not set, tell the user to get one and add it to their shell config (`.bashrc`, `.zshrc`, etc.) before proceeding. Do not proceed without it.
+If the key is not set, tell the user to add it to `.zshrc`/`.bashrc` before proceeding. Do not proceed without it.
 
 ---
 
-## Model selection
+## Capabilities
 
-There are three Nano Banana models. Pick based on the job:
+| Capability | What it does | When to use |
+|---|---|---|
+| **Text-to-image** | Generate a brand new image from a prompt | Hero images, backgrounds, illustrations from scratch |
+| **Reference images** | Generate using 1–14 source images so the subject stays consistent | Same product/car/character across multiple shots |
+| **Image editing** | Modify an existing image (recolor, time-of-day, add/remove elements) | Variants of a hero, A/B versions, dark/light modes |
+| **Multi-turn chat** | Iterate on the same image conversationally | Refinement passes, translations, mood shifts |
+| **Google Search grounding** | Use real-time web data in the image | Current weather, recent events, live sports |
+| **Image Search grounding** | Use real web images as visual context (3.1 Flash only) | Reference-accurate species, products, landmarks |
+| **Batch generation** | Generate many images with rate-limit-aware pacing | 5+ images at once |
+| **Optimization** | Compress JPEG with mozjpeg or convert to WebP | Production-ready assets, faster page loads |
 
-| Model ID | Name | Use when | Notes |
+---
+
+## Quality presets
+
+Always pick a preset rather than the raw model name — keeps prompts cleaner and lets the skill swap models centrally.
+
+| Preset | Model | Cost | When to use |
 |---|---|---|---|
-| `gemini-3-pro-image-preview` | **Nano Banana Pro** | Professional asset production, hero images, complex multi-element compositions, accurate text rendering | Best quality, slower, ~$0.13/image, supports up to 14 reference images (6 objects + 5 characters max) |
-| `gemini-3.1-flash-image-preview` | **Nano Banana 2** | Most general use cases, batch generation, when you need 4K or Image Search grounding | Fast, ~$0.03/image, supports up to 14 reference images (10 objects + 4 characters), adds 1:4/4:1/1:8/8:1 ratios and 512 (0.5K) resolution |
-| `gemini-2.5-flash-image` | **Nano Banana** (original) | Free tier, simple shots, fallback when others are rate-limited | Fastest, best for prototyping, max 3 input images |
+| `draft` | `gemini-2.5-flash-image` | Free tier | Prototyping prompts, throwaway shots, free-tier-only users |
+| `standard` | `gemini-3.1-flash-image-preview` | ~$0.03 | **Default**. Cards, thumbnails, section visuals, batch generation |
+| `hero` | `gemini-3-pro-image-preview` | ~$0.13 | Hero images, brand assets, anything where quality matters most |
 
-**Default to `gemini-3.1-flash-image-preview`** for most web projects — good balance of quality, speed, and feature support. Use `gemini-3-pro-image-preview` for hero images and assets where quality really matters. Use `gemini-2.5-flash-image` only if billing/rate limit issues hit.
+**Heuristics:**
+- Hero / above-the-fold / brand asset → `hero`
+- Editorial section image / product card / background → `standard`
+- Quick test / throwaway / prototype → `draft`
 
 ---
 
-## Step 1 — Audit the Project for Image Needs
+## Workflow
 
-Before generating anything, scan the project files and identify every place that needs an image. Look for:
+### Step 1 — Audit the project
+
+Before generating anything, scan files and identify every image needed. Look for:
 
 - Hero sections with no `<img>` or a placeholder `src`
-- Cards, grids, or galleries missing real visuals
-- Background images referenced in CSS that don't exist
-- `background-color` used where a photo would be more appropriate
+- Cards, grids, galleries missing real visuals
+- CSS `background-image` URLs that don't exist on disk
+- `background-color` where a photo would be better
 - `[IMAGE]`, `placeholder`, `TODO`, or `/* image here */` comments
-- Empty `<div>` wrappers that are clearly meant to hold images
-- `object-fit: cover` containers with no actual image source
+- Empty `<div>` wrappers clearly meant to hold images
+- `object-fit: cover` containers with no source
 
-Output a numbered list of every image needed before generating anything. For each one, note:
-1. What it's for (hero background, card thumbnail, etc.)
-2. Best aspect ratio (`16:9`, `1:1`, `9:16`, `3:4`, etc.)
-3. Best resolution (`1K` for thumbnails, `2K` for heroes, `4K` only when needed)
-4. The file path where it should be saved
+Output a table for confirmation, e.g.:
 
-Get confirmation or adjustments from the user if the list is long or ambiguous.
+| # | Purpose | Aspect | Size | Quality | Path |
+|---|---|---|---|---|---|
+| 1 | Hero background | 16:9 | 2K | hero | `assets/images/hero.jpg` |
+| 2 | Service card 1 | 4:3 | 1K | standard | `assets/images/service-1.jpg` |
+| 3 | Service card 2 | 4:3 | 1K | standard | `assets/images/service-2.jpg` |
 
----
+Get approval before generating.
 
-## Step 2 — Write Image Prompts
-
-For each image needed, write a **descriptive paragraph**, not a list of keywords. The model's core strength is language understanding — a narrative prompt almost always beats disconnected words.
-
-### Prompt rules for web images:
-
-- **Hero images**: cinematic, wide, atmospheric. No people required unless they add to the story.
-- **Card/thumbnail images**: clear subject, clean composition, works at small sizes.
-- **Background images**: subtle, not distracting, works behind text. Mention negative space if text will overlay.
-- **Product/service images**: precise, professional, hyper-realistic. Use studio-lighting language ("three-point softbox setup", "diffused highlights").
-- **No text or logos** in generated images by default — Nano Banana CAN render text well, but only ask for it when explicitly needed.
-- Always include: lighting type, camera angle, mood, quality level (`8K`, `hyper-realistic`, `cinematic`).
-- Match the site's aesthetic — luxury = dark/moody, SaaS = clean/minimal, lifestyle = warm/editorial.
-
-### Pro prompting techniques
-
-- **Use semantic negative prompts**: instead of "no cars", say "an empty, deserted street with no signs of traffic".
-- **Be hyper-specific**: "ornate elven plate armor, etched with silver leaf patterns, with a high collar and pauldrons shaped like falcon wings" beats "fantasy armor".
-- **Provide context and intent**: "Create a logo for a high-end, minimalist skincare brand" beats "Create a logo".
-- **Use cinematography terms**: `wide-angle shot`, `macro shot`, `low-angle perspective`, `golden hour`, `85mm portrait lens`.
-- **For step-by-step composition**: break complex scenes into ordered instructions ("First, create the background... Then, in the foreground, add...").
-
-### Example prompt:
-
-```
-A hyper-realistic cinematic wide shot of a sleek black Mercedes-Benz S-Class parked on a rain-wet Vienna cobblestone street at night. City lights reflected on the wet ground. Moody, atmospheric. Shot on a DSLR with a 24mm wide lens, low angle, golden ambient light from street lamps, deep shadows, bokeh background of historic Viennese architecture. Ultra-detailed.
-```
-
-Note: aspect ratio and resolution are NOT in the prompt text — they go in the API config (see Step 3).
-
----
-
-## Step 3 — Generate Images via Gemini API
-
-Use the **new `@google/genai` SDK** (not the legacy `@google/generative-ai`).
-
-### Install the SDK (once per project):
+### Step 2 — Install dependencies
 
 ```bash
 npm install @google/genai
 ```
 
-### Generation script pattern:
+For optimization (optional):
+```bash
+npm install sharp
+```
 
+### Step 3 — Write prompts
+
+Use **descriptive paragraphs**, not keyword lists. The model's strength is language understanding.
+
+**Rules:**
+- Hero images: cinematic, atmospheric, wide. No people unless they add story.
+- Card / thumbnail: clear subject, clean composition, readable at small sizes.
+- Background: subtle, leaves room for text overlays.
+- Product / service: hyper-realistic, professional, studio-lighting language ("three-point softbox", "diffused highlights").
+- No text or logos unless explicitly requested.
+- Always include: lighting, camera angle, mood, quality ("8K", "hyper-realistic", "cinematic").
+- Match the site's aesthetic — luxury = dark/moody, SaaS = clean/minimal, lifestyle = warm/editorial.
+
+**Pro techniques:**
+- Semantic negatives: "an empty deserted street with no signs of traffic" beats "no cars".
+- Hyper-specificity: "ornate elven plate armor etched with silver leaf patterns" beats "fantasy armor".
+- Cinematography terms: `wide-angle shot`, `macro`, `low-angle`, `golden hour`, `85mm portrait lens`.
+- Step-by-step for complex scenes: "First create the background... Then add..."
+
+Aspect ratio and resolution go in the API config, NOT in the prompt text.
+
+### Step 4 — Use the library
+
+The repo includes `lib/nano-banana.js` with all the API patterns wrapped. Import what you need.
+
+**Basic text-to-image:**
 ```javascript
-// generate-images.js
-import { GoogleGenAI } from "@google/genai";
-import fs from "node:fs";
-import path from "node:path";
+import { generate } from "./lib/nano-banana.js"; // adjust path as needed
 
-if (!process.env.GEMINI_API_KEY) {
-  console.error("GEMINI_API_KEY is not set. Get one at https://aistudio.google.com/apikey");
-  process.exit(1);
-}
+await generate({
+  prompt: "Cinematic wide shot of a black luxury sedan on rain-wet Vienna cobblestone at night...",
+  output: "assets/images/hero.jpg",
+  aspectRatio: "16:9",
+  imageSize: "2K",
+  quality: "hero",
+});
+```
 
-const ai = new GoogleGenAI({});
+**Batch generation:**
+```javascript
+import { generateBatch } from "./lib/nano-banana.js";
 
-const images = [
-  {
-    prompt: "YOUR DETAILED PROMPT HERE",
-    filename: "hero-bg.jpg",
-    outputDir: "assets/images",
-    aspectRatio: "16:9",   // see ratio list below
-    imageSize: "2K",       // "512", "1K", "2K", "4K"
-    model: "gemini-3.1-flash-image-preview",
-  },
-  // add more as needed
+const jobs = [
+  { prompt: "...", output: "assets/images/a.jpg", aspectRatio: "16:9", imageSize: "2K", quality: "hero" },
+  { prompt: "...", output: "assets/images/b.jpg", aspectRatio: "4:3", imageSize: "1K", quality: "standard" },
 ];
 
-async function generateImage({ prompt, filename, outputDir, aspectRatio, imageSize, model }) {
-  console.log(`Generating: ${filename} (${aspectRatio} ${imageSize})...`);
-
-  const response = await ai.models.generateContent({
-    model,
-    contents: prompt,
-    config: {
-      responseModalities: ["IMAGE"],
-      responseFormat: {
-        image: {
-          aspectRatio,
-          imageSize,
-        },
-      },
-    },
-  });
-
-  for (const part of response.candidates[0].content.parts) {
-    if (part.inlineData) {
-      const buffer = Buffer.from(part.inlineData.data, "base64");
-      fs.mkdirSync(outputDir, { recursive: true });
-      const fullPath = path.join(outputDir, filename);
-      fs.writeFileSync(fullPath, buffer);
-      console.log(`Saved: ${fullPath}`);
-      return fullPath;
-    }
-  }
-
-  console.warn(`No image data returned for ${filename}. Try refining the prompt.`);
-}
-
-for (const img of images) {
-  try {
-    await generateImage(img);
-    // Pause between requests to respect rate limits (free tier ~10/min)
-    await new Promise((r) => setTimeout(r, 6000));
-  } catch (err) {
-    console.error(`Failed: ${img.filename} — ${err.message}`);
-  }
-}
-```
-
-Run with:
-```bash
-node generate-images.js
-```
-
-### Available aspect ratios
-
-| Use case | Ratio | Notes |
-|---|---|---|
-| Hero / banner | `16:9` | Wide cinematic |
-| Ultra-wide hero | `21:9` | Cinemascope |
-| Card thumbnail | `4:3` or `3:2` | Works at small sizes |
-| Square card | `1:1` | Grids, profiles |
-| Mobile hero / portrait | `9:16` | Full-screen mobile |
-| Tall card | `3:4` or `4:5` | Vertical layouts |
-| Banner (3.1 Flash only) | `4:1` or `8:1` | Wide narrow banners |
-| Skyscraper (3.1 Flash only) | `1:4` or `1:8` | Tall narrow images |
-
-### Available resolutions
-
-- `512` — 0.5K, smallest, only `gemini-3.1-flash-image-preview` supports this
-- `1K` — default, fine for thumbnails and most cards
-- `2K` — heroes, banners, anything full-width
-- `4K` — only when truly needed (print, very large displays)
-
-**Must use uppercase K** (`1K`, `2K`, `4K`). The `512` value has no K suffix.
-
-### Rate limits
-
-Free tier ~10 requests/minute. Always add a delay between requests:
-```javascript
-await new Promise(r => setTimeout(r, 6000));
-```
-
-For 20+ images, consider the Batch API (24hr turnaround, higher rate limits) — see https://ai.google.dev/gemini-api/docs/batch-api.
-
----
-
-## Step 4 — Advanced: Reference images for consistency
-
-When you need the **same subject across multiple shots** (e.g. the same Mercedes S-Class in the hero, the about section, and a card grid for a chauffeur site), pass reference images.
-
-```javascript
-import { GoogleGenAI } from "@google/genai";
-import fs from "node:fs";
-
-const ai = new GoogleGenAI({});
-
-const referenceImage = fs.readFileSync("assets/reference/black-s-class.jpg");
-const base64Ref = referenceImage.toString("base64");
-
-const response = await ai.models.generateContent({
-  model: "gemini-3.1-flash-image-preview",
-  contents: [
-    { text: "Place this exact car parked in front of the Vienna State Opera at golden hour, cinematic wide shot, 24mm lens, hyper-realistic." },
-    {
-      inlineData: {
-        mimeType: "image/jpeg",
-        data: base64Ref,
-      },
-    },
-  ],
-  config: {
-    responseModalities: ["IMAGE"],
-    responseFormat: { image: { aspectRatio: "16:9", imageSize: "2K" } },
-  },
+await generateBatch(jobs, {
+  onProgress: (job, i, total) => console.log(`[${i + 1}/${total}] ${job.output}`),
 });
 ```
 
-Limits per model:
-- `gemini-3.1-flash-image-preview`: up to 10 object refs + 4 character refs (14 total)
-- `gemini-3-pro-image-preview`: up to 6 object refs + 5 character refs (14 total)
-- `gemini-2.5-flash-image`: max 3 input images
-
----
-
-## Step 5 — Advanced: Image editing (existing image as input)
-
-To modify an existing image instead of generating from scratch (recoloring, adding/removing elements, style transfer), pass the image as a reference and describe the change:
-
+**Reference images (consistency):**
 ```javascript
-const original = fs.readFileSync("assets/images/hero-bg.jpg");
-const base64Original = original.toString("base64");
+import { generateWithReferences } from "./lib/nano-banana.js";
 
-const response = await ai.models.generateContent({
-  model: "gemini-3.1-flash-image-preview",
-  contents: [
-    { text: "Change the time of day in this image from night to a foggy early morning. Keep the car, the street, and the architecture exactly the same. Only change the lighting and atmosphere." },
-    {
-      inlineData: { mimeType: "image/jpeg", data: base64Original },
-    },
-  ],
-  config: {
-    responseModalities: ["IMAGE"],
-    responseFormat: { image: { aspectRatio: "16:9", imageSize: "2K" } },
-  },
+await generateWithReferences({
+  prompt: "Place this exact car parked at Schloss Schönbrunn at golden hour. Match the references.",
+  output: "assets/images/car-schoenbrunn.jpg",
+  references: ["assets/reference/car-1.jpg", "assets/reference/car-2.jpg"],
+  aspectRatio: "3:2",
+  imageSize: "2K",
+  quality: "hero",
 });
 ```
 
-For complex multi-step edits (e.g. "first change the car color, then move it to a different location"), use the **chat API** for multi-turn iteration — see https://ai.google.dev/gemini-api/docs/image-generation#multi-turn_image_editing.
+**Editing an existing image:**
+```javascript
+import { edit } from "./lib/nano-banana.js";
 
----
+await edit({
+  input: "assets/images/hero.jpg",
+  output: "assets/images/hero-foggy.jpg",
+  prompt: "Change the time of day from night to a foggy early morning. Keep everything else identical.",
+  aspectRatio: "16:9",
+  imageSize: "2K",
+  quality: "hero",
+});
+```
 
-## Step 6 — Embed Images into the Project
+**Multi-turn chat:**
+```javascript
+import { startChat } from "./lib/nano-banana.js";
 
-After generation, update every reference in the HTML/CSS/JS to use the real image paths.
+const chat = startChat({ quality: "hero" });
 
-### HTML:
+await chat.send(
+  "Create a vibrant flat-illustration infographic of how airport transfers work, navy/gold palette.",
+  "assets/images/v1.jpg",
+  { aspectRatio: "4:5", imageSize: "2K" },
+);
+
+await chat.send(
+  "Make the gold more matte. Keep everything else the same.",
+  "assets/images/v2.jpg",
+  { aspectRatio: "4:5", imageSize: "2K" },
+);
+```
+
+**Google Search grounding:**
+```javascript
+await generate({
+  prompt: "Modern weather chart for the next 5 days in Vienna with daily outfit suggestion.",
+  output: "assets/images/weather.jpg",
+  aspectRatio: "16:9",
+  imageSize: "2K",
+  quality: "standard",
+  googleSearch: true,
+});
+```
+
+**Optimization:**
+```javascript
+import { optimize } from "./lib/nano-banana.js";
+
+await optimize("assets/images/hero.jpg", "assets/images/hero.jpg", { quality: 82 });
+await optimize("assets/images/hero.jpg", "assets/images/hero.jpg", { webp: true, quality: 82 });
+```
+
+### Step 5 — Embed in the project
+
 ```html
 <!-- Before -->
 <div class="hero-bg"></div>
 
 <!-- After -->
-<img src="assets/images/hero-bg.jpg" alt="Vienna luxury chauffeur service at night" loading="lazy" width="1920" height="1080">
+<img src="assets/images/hero.jpg" alt="Vienna luxury chauffeur at night" loading="lazy" width="1920" height="1080">
 ```
 
-### CSS background-image:
 ```css
-/* Before */
-.hero { background-color: #1a1a1a; }
-
-/* After */
 .hero {
-  background-image: url('assets/images/hero-bg.jpg');
+  background-image: url('assets/images/hero.jpg');
   background-size: cover;
   background-position: center;
 }
 ```
 
-### Always add:
-- `alt` text describing the image content (SEO + accessibility)
-- `loading="lazy"` on images below the fold
-- `width` and `height` attributes to prevent layout shift
+Always add: `alt` text, `loading="lazy"` below the fold, `width`/`height` to prevent layout shift. Prefer `<picture>` with a WebP source when an optimized WebP exists:
 
----
+```html
+<picture>
+  <source srcset="assets/images/hero.webp" type="image/webp">
+  <img src="assets/images/hero.jpg" alt="..." loading="lazy" width="1920" height="1080">
+</picture>
+```
 
-## Step 7 — Clean Up
+### Step 6 — Clean up
 
 After embedding:
-1. Delete `generate-images.js` (or move it to a `/scripts` folder if the user wants to reuse it)
-2. Optionally remove `@google/genai` from `package.json` if it's not needed at runtime
-3. Consider adding `/assets/images/*.jpg` to `.gitignore` if the user doesn't want generated images committed (and adding a regen script to the README instead)
+1. Move generation scripts to `/scripts` or delete them
+2. Consider adding generated images to `.gitignore` and keeping a regenerate script in the repo instead
+3. Remove `@google/genai` and `sharp` from runtime deps if they're only used at build time
 
 ---
 
-## Important limitations
+## Aspect ratios
 
-- **All generated images have a SynthID watermark** (invisible, but present — let the user know)
-- **No transparent backgrounds** — Nano Banana can't generate them. Use white background and remove it in post if needed.
-- **Best with these languages**: EN, ar-EG, de-DE, es-MX, fr-FR, hi-IN, id-ID, it-IT, ja-JP, ko-KR, pt-BR, ru-RU, ua-UA, vi-VN, zh-CN. German (de-DE) is supported, great for Vienna clients.
-- **Text rendering tip**: when generating an image with text, first ask the model to write the text, then ask for an image containing it. This produces more accurate results.
-- **No audio/video input** — image input only.
-- **People search**: Image Search grounding can't be used to search for images of people.
+| Use case | Ratio |
+|---|---|
+| Hero / banner | `16:9` |
+| Ultra-wide cinematic | `21:9` |
+| Card thumbnail | `4:3`, `3:2` |
+| Square (grid, profile, social) | `1:1` |
+| Mobile portrait hero | `9:16` |
+| Tall card | `3:4`, `4:5` |
+| Wide narrow banner (3.1 Flash) | `4:1`, `8:1` |
+| Tall narrow skyscraper (3.1 Flash) | `1:4`, `1:8` |
+
+## Resolutions
+
+- `512` — 3.1 Flash only, smallest
+- `1K` — default, thumbnails and cards
+- `2K` — heroes and full-width
+- `4K` — print or very large displays only
+
+**Must be uppercase K** (`2K` not `2k`). `512` has no K suffix.
 
 ---
 
-## Error Handling
+## Rate limits and batching
+
+- Free tier ~10 requests/minute. `generateBatch()` defaults to 6-second delays.
+- For 20+ images, consider the Gemini Batch API (24hr turnaround, higher limits). See https://ai.google.dev/gemini-api/docs/batch-api.
+
+---
+
+## Limitations to remember
+
+- **All generated images include a SynthID watermark** (invisible, but legally present). Tell clients if they ask.
+- **No transparent backgrounds** — model can't do them. Generate on white, key out in post if needed.
+- **No audio/video inputs.**
+- **15 supported languages** for prompting: EN, ar-EG, de-DE, es-MX, fr-FR, hi-IN, id-ID, it-IT, ja-JP, ko-KR, pt-BR, ru-RU, ua-UA, vi-VN, zh-CN. German works well for Vienna clients.
+- **Text in images**: generate the text first as a string, then prompt for the image containing it. More accurate than asking for both at once.
+- **Image Search grounding** can't search for images of people.
+
+---
+
+## Error reference
 
 | Error | Fix |
 |---|---|
-| `GEMINI_API_KEY not set` | Tell user to export it in their terminal |
-| `model not found` | Verify the model ID — these change. Try `gemini-2.5-flash-image` as fallback |
-| `billing required` | Free tier exhausted — fall back to `gemini-2.5-flash-image` (free tier available) or have the user enable billing |
-| `response has no image part` | Prompt may be too vague or content-flagged — refine the prompt and retry |
-| `rate limit exceeded` | Increase delay to 10s+ between requests, or use Batch API for large jobs |
-| `INVALID_ARGUMENT: imageSize` | Make sure resolution uses uppercase K (`2K` not `2k`), and that the model supports it |
+| `GEMINI_API_KEY is not set` | User exports key in `.zshrc`/`.bashrc` |
+| `model not found` | Verify model ID. Fall back to `quality: "draft"` (gemini-2.5-flash-image) |
+| `billing required` | Free tier exhausted. Fall back to `quality: "draft"` or enable billing |
+| `No image returned` | Prompt too vague or flagged. Refine and retry |
+| `rate limit exceeded` | Increase `delayMs` in `generateBatch` to 10000+ |
+| `INVALID_ARGUMENT: imageSize` | Use uppercase K (`2K` not `2k`), verify model supports the size |
+| `Optimization requires sharp` | `npm install sharp` |
 
 ---
 
-## Quick decision tree
+## Decision tree
 
 ```
-Need a single hero image, quality matters most?
-  → gemini-3-pro-image-preview, 16:9, 2K
+ONE image, brand-critical hero?
+  → generate({ quality: "hero", aspectRatio: "16:9", imageSize: "2K" })
 
-Need 5-20 images across a site, balanced quality/speed?
-  → gemini-3.1-flash-image-preview, per-image ratio, 1K or 2K
+MANY images for a site (5-20), balanced quality/speed?
+  → generateBatch with mostly quality: "standard", hero only for the actual hero
 
-Need a quick prototype or testing prompts?
-  → gemini-2.5-flash-image, 1:1, 1K
+SAME car/product/character across multiple shots?
+  → generateWithReferences({ references: [...], quality: "hero" })
 
-Same product/car/character across multiple images?
-  → Pass reference image, use gemini-3.1-flash-image-preview or 3-pro
+Need to tweak an existing generated image?
+  → edit({ input, prompt: "change X, keep everything else identical" })
 
-Image needs current real-world info (weather, news, sports)?
-  → Add google_search tool, see ai.google.dev/gemini-api/docs/google-search
+Iterating with the user ("warmer", "now in German", "add a person")?
+  → startChat(), then chat.send() repeatedly
 
-Need 20+ images at once?
-  → Batch API (24hr turnaround), see ai.google.dev/gemini-api/docs/batch-api
+Image needs current real-world data (weather, news, sports)?
+  → generate({ googleSearch: true })
+
+Production assets that need to be lightweight?
+  → optimize() after generation, ideally also write a WebP variant
+
+20+ images at once?
+  → Suggest Gemini Batch API to the user instead
 ```

@@ -1,160 +1,175 @@
 # nano-banana-codegen
 
-A Claude Code skill that generates real images via Google's Nano Banana (Gemini) API and embeds them directly into web projects. No more placeholder divs, gradient backgrounds, or empty `<img>` tags.
+A Claude Code skill (and standalone toolkit) for generating, editing, and embedding real images via Google's Nano Banana (Gemini) API. No more placeholder divs, gradient backgrounds, or empty `<img>` tags.
 
-When this skill is installed, Claude Code will:
+## What's in this repo
 
-1. Scan the project for places that need images
-2. Write detailed prompts for each one
-3. Generate the images via the Gemini API
-4. Save them into the project and update HTML/CSS/JS references
-5. Clean up after itself
-
----
+```
+nano-banana-codegen/
+├── SKILL.md              ← The skill, read by Claude Code
+├── lib/
+│   └── nano-banana.js    ← Shared library wrapping the Gemini SDK
+├── examples/
+│   ├── generate-basic.js          ← Text-to-image, single or batch
+│   ├── generate-with-references.js ← Same subject across multiple shots
+│   ├── edit-image.js              ← Modify an existing image
+│   ├── chat-iterate.js            ← Multi-turn refinement
+│   ├── with-google-search.js      ← Use real-time web data
+│   └── generate-and-optimize.js   ← Generate then compress to WebP
+├── package.json
+├── README.md
+├── CHANGELOG.md
+└── LICENSE
+```
 
 ## Why this exists
 
-By default, Claude Code avoids generating images and falls back to coloured divs, CSS gradients, or `[placeholder]` comments. This skill flips that behaviour: when a real photograph would make the page better, Claude Code will actually go and make one.
+By default, Claude Code avoids generating images and falls back to coloured divs, CSS gradients, or `[placeholder]` comments. This skill flips that behaviour: when a real photograph would make the page better, Claude Code will actually go and make one — and it now ships with a full toolkit so it doesn't have to re-derive the API patterns each time.
 
-Use it for hero images, card thumbnails, backgrounds, product shots, section visuals — anything where a real image beats a placeholder.
+## Capabilities
 
----
+| Capability | Function |
+|---|---|
+| Text-to-image | `generate()` |
+| Reference images (consistency) | `generateWithReferences()` — up to 14 refs |
+| Image editing | `edit()` |
+| Multi-turn iterative chat | `startChat().send()` |
+| Google Search grounding | `generate({ googleSearch: true })` |
+| Image Search grounding | `generate({ imageSearch: true })` (3.1 Flash) |
+| Batch generation | `generateBatch()` — rate-limit aware |
+| Optimization | `optimize()` — JPEG/mozjpeg or WebP |
+
+## Quality presets
+
+| Preset | Model | Cost | Use for |
+|---|---|---|---|
+| `draft` | `gemini-2.5-flash-image` | Free tier | Prototyping |
+| `standard` | `gemini-3.1-flash-image-preview` | ~$0.03 | Default, cards, sections |
+| `hero` | `gemini-3-pro-image-preview` | ~$0.13 | Brand-critical hero shots |
 
 ## Installation
 
-### Option A — install for Claude Code (recommended)
-
-Clone this repo into your Claude Code skills directory:
+### For Claude Code (recommended)
 
 ```bash
 cd ~/.claude/skills
 git clone https://github.com/ErudaRobiu/nano-banana-codegen.git
 ```
 
-Claude Code will pick it up automatically next time it starts.
+Claude Code picks it up on next start.
 
-### Option B — install per-project
+### For Claude.ai (web/desktop)
 
-If you only want the skill available in one project, clone it into the project's `.claude/skills/` folder:
+Upload `SKILL.md` to a Claude Project's skills panel.
+
+### As a standalone library
 
 ```bash
 cd your-project
-mkdir -p .claude/skills
-cd .claude/skills
-git clone https://github.com/ErudaRobiu/nano-banana-codegen.git
+npm install @google/genai
+# Then import from a clone of this repo, or copy lib/nano-banana.js into your project
 ```
 
-### Option C — install for Claude.ai (web/desktop)
-
-Upload the `SKILL.md` file directly into a Claude Project's custom instructions or skills panel.
-
----
-
 ## Setup
-
-You need a Gemini API key. Get one free at [aistudio.google.com/apikey](https://aistudio.google.com/apikey).
-
-Add it to your shell config (`.bashrc`, `.zshrc`, etc.):
 
 ```bash
 export GEMINI_API_KEY=your_key_here
 ```
 
-Reload your shell or run `source ~/.zshrc`, then verify:
+Get a free key at [aistudio.google.com/apikey](https://aistudio.google.com/apikey).
 
-```bash
-echo $GEMINI_API_KEY
-```
+## Usage with Claude Code
 
----
-
-## Usage
-
-Once installed, just ask Claude Code naturally:
+Just ask naturally:
 
 - "Add real images to this landing page"
 - "Generate hero images for this project using Nano Banana"
-- "I want actual photos, not placeholders"
-- "Fill in the missing visuals on the homepage"
-- "Generate the same product car in 5 different scenes"
+- "Make the same product visible in 5 different scenes" (reference images)
+- "Change the time of day in the hero from night to morning" (edit)
+- "Refine the infographic — make the gold more matte" (chat iteration)
 
-Claude Code will run through the full workflow: audit, prompt, generate, embed, clean up.
+Claude Code will audit the project, write prompts, call the library, embed images, and clean up.
 
----
+## Usage as a standalone library
 
-## What you get
+```javascript
+import { generate, generateBatch, edit, startChat } from "./lib/nano-banana.js";
 
-The skill outputs:
+// Single image
+await generate({
+  prompt: "Cinematic wide shot of an empty Vienna street at dawn...",
+  output: "assets/images/hero.jpg",
+  aspectRatio: "16:9",
+  imageSize: "2K",
+  quality: "hero",
+});
 
-- Real `.jpg` or `.png` files saved to your project (default: `assets/images/`)
-- Updated HTML/CSS/JS that references them
-- Proper `alt` text, `loading="lazy"`, and width/height attributes for performance and accessibility
+// Batch
+await generateBatch([
+  { prompt: "...", output: "a.jpg", aspectRatio: "16:9", imageSize: "2K", quality: "hero" },
+  { prompt: "...", output: "b.jpg", aspectRatio: "1:1", imageSize: "1K", quality: "standard" },
+]);
 
-Resolution and aspect ratio are controlled per-image — heroes can be 16:9 at 2K, thumbnails 1:1 at 1K, mobile portraits 9:16, banners 21:9 or 8:1.
+// Edit existing
+await edit({
+  input: "hero.jpg",
+  output: "hero-foggy.jpg",
+  prompt: "Change night to foggy early morning, everything else identical.",
+});
 
----
-
-## Models
-
-| Model ID | Quality | Cost | Speed |
-|---|---|---|---|
-| `gemini-3-pro-image-preview` | Best (Nano Banana Pro) | ~$0.13/image paid | Slower |
-| `gemini-3.1-flash-image-preview` | Great (Nano Banana 2) | ~$0.03/image paid | Fast — **default** |
-| `gemini-2.5-flash-image` | Good (original Nano Banana) | Free tier available | Fastest |
-
-The skill defaults to `gemini-3.1-flash-image-preview` for most images and uses `gemini-3-pro-image-preview` for hero shots and high-stakes assets. If billing or rate limits hit, falls back to `gemini-2.5-flash-image`.
-
----
-
-## Features supported
-
-- ✅ Up to 4K resolution (`512`, `1K`, `2K`, `4K`)
-- ✅ 14 aspect ratios including ultra-wide (21:9) and skyscraper (1:8)
-- ✅ Reference images for product/character consistency (up to 14 per call)
-- ✅ Image editing (change time of day, add/remove elements, style transfer)
-- ✅ Multi-language prompting (15 languages, German included for Vienna clients)
-- ✅ Uses the modern `@google/genai` SDK
-
-Not yet wired in (PRs welcome):
-- ⬜ Google Search grounding (current weather, news, real-time data)
-- ⬜ Multi-turn chat editing
-- ⬜ Batch API for 20+ images at once
-- ⬜ Thinking mode controls
-
----
-
-## Example starter script
-
-If you want to run image generation manually without the skill, see [`examples/generate-images.js`](examples/generate-images.js). It's a minimal Node.js script you can drop into any project, edit the prompts list, and run.
-
-```bash
-npm install @google/genai
-node examples/generate-images.js
+// Iterate via chat
+const chat = startChat({ quality: "hero" });
+await chat.send("Initial prompt...", "v1.jpg");
+await chat.send("Make it warmer.", "v2.jpg");
 ```
 
----
+## Running the examples
 
-## Roadmap / ideas
+```bash
+git clone https://github.com/ErudaRobiu/nano-banana-codegen.git
+cd nano-banana-codegen
+npm install
+export GEMINI_API_KEY=your_key
 
-- [ ] Google Search grounding integration (for current weather, news, sports imagery)
-- [ ] Image Search grounding (3.1 Flash only) for visual context
-- [ ] Multi-turn chat editing for iterative refinement
-- [ ] Batch API mode for 20+ images
-- [ ] Thinking mode controls (`minimal` vs `high`)
-- [ ] Style presets (luxury, SaaS, lifestyle, editorial) baked into prompt templates
-- [ ] Multi-image consistency helper (same character/product across multiple shots)
-- [ ] Automatic image optimization (compression, WebP conversion) after generation
-- [ ] CLI mode so it can be used outside Claude Code
+npm run example:basic        # text-to-image
+npm run example:references   # multi-image consistency
+npm run example:edit         # modify existing image
+npm run example:chat         # multi-turn iteration
+npm run example:search       # Google Search grounding
+npm run example:optimize     # generate + compress to WebP
+```
+
+## Aspect ratios
+
+`1:1`, `1:4`, `1:8`, `2:3`, `3:2`, `3:4`, `4:1`, `4:3`, `4:5`, `5:4`, `8:1`, `9:16`, `16:9`, `21:9`
+
+Note: `1:4`, `4:1`, `1:8`, `8:1` require Gemini 3.1 Flash (use `quality: "standard"`).
+
+## Resolutions
+
+`512` (3.1 Flash only), `1K`, `2K`, `4K`. Always uppercase K.
+
+## Limitations
+
+- All generated images include an invisible SynthID watermark
+- No transparent backgrounds
+- No audio/video inputs
+- Image Search grounding cannot search for people
+- 15 prompt languages best supported (German included)
+
+## Roadmap
+
+- [ ] Style presets (luxury, SaaS, lifestyle, editorial) for prompt templates
+- [ ] Gemini Batch API mode (24hr async for 20+ images)
+- [ ] CLI binary (`npx nano-banana generate ...`)
+- [ ] Better thinking mode controls exposed via the lib
+- [ ] Validation/preview mode that estimates cost before generating
 
 PRs welcome.
 
----
-
 ## Related
 
-- [`nano-banana-prompt`](https://github.com/ErudaRobiu/nano-banana-prompt) — companion skill for crafting Nano Banana JSON prompts
-
----
+- [`nano-banana-prompt`](https://github.com/ErudaRobiu/nano-banana-prompt) — companion skill for crafting prompt JSON
 
 ## License
 
