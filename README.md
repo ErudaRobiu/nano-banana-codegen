@@ -1,6 +1,6 @@
 # nano-banana-codegen
 
-A Claude Code skill that generates real images via Google's Nano Banana Pro (Gemini) API and embeds them directly into web projects. No more placeholder divs, gradient backgrounds, or empty `<img>` tags.
+A Claude Code skill that generates real images via Google's Nano Banana (Gemini) API and embeds them directly into web projects. No more placeholder divs, gradient backgrounds, or empty `<img>` tags.
 
 When this skill is installed, Claude Code will:
 
@@ -76,6 +76,7 @@ Once installed, just ask Claude Code naturally:
 - "Generate hero images for this project using Nano Banana"
 - "I want actual photos, not placeholders"
 - "Fill in the missing visuals on the homepage"
+- "Generate the same product car in 5 different scenes"
 
 Claude Code will run through the full workflow: audit, prompt, generate, embed, clean up.
 
@@ -89,16 +90,7 @@ The skill outputs:
 - Updated HTML/CSS/JS that references them
 - Proper `alt` text, `loading="lazy"`, and width/height attributes for performance and accessibility
 
----
-
-## Example starter script
-
-If you want to run image generation manually without the skill, see [`examples/generate-images.js`](examples/generate-images.js). It's a minimal Node.js script you can drop into any project, edit the prompts list, and run.
-
-```bash
-npm install @google/generative-ai
-node examples/generate-images.js
-```
+Resolution and aspect ratio are controlled per-image — heroes can be 16:9 at 2K, thumbnails 1:1 at 1K, mobile portraits 9:16, banners 21:9 or 8:1.
 
 ---
 
@@ -107,22 +99,51 @@ node examples/generate-images.js
 | Model ID | Quality | Cost | Speed |
 |---|---|---|---|
 | `gemini-3-pro-image-preview` | Best (Nano Banana Pro) | ~$0.13/image paid | Slower |
-| `gemini-3.1-flash-image-preview` | Great (Nano Banana 2) | ~$0.03/image paid | Fast |
+| `gemini-3.1-flash-image-preview` | Great (Nano Banana 2) | ~$0.03/image paid | Fast — **default** |
 | `gemini-2.5-flash-image` | Good (original Nano Banana) | Free tier available | Fastest |
 
-The skill defaults to `gemini-3-pro-image-preview`. If you hit rate limits or billing issues, fall back to `gemini-2.5-flash-image`.
+The skill defaults to `gemini-3.1-flash-image-preview` for most images and uses `gemini-3-pro-image-preview` for hero shots and high-stakes assets. If billing or rate limits hit, falls back to `gemini-2.5-flash-image`.
+
+---
+
+## Features supported
+
+- ✅ Up to 4K resolution (`512`, `1K`, `2K`, `4K`)
+- ✅ 14 aspect ratios including ultra-wide (21:9) and skyscraper (1:8)
+- ✅ Reference images for product/character consistency (up to 14 per call)
+- ✅ Image editing (change time of day, add/remove elements, style transfer)
+- ✅ Multi-language prompting (15 languages, German included for Vienna clients)
+- ✅ Uses the modern `@google/genai` SDK
+
+Not yet wired in (PRs welcome):
+- ⬜ Google Search grounding (current weather, news, real-time data)
+- ⬜ Multi-turn chat editing
+- ⬜ Batch API for 20+ images at once
+- ⬜ Thinking mode controls
+
+---
+
+## Example starter script
+
+If you want to run image generation manually without the skill, see [`examples/generate-images.js`](examples/generate-images.js). It's a minimal Node.js script you can drop into any project, edit the prompts list, and run.
+
+```bash
+npm install @google/genai
+node examples/generate-images.js
+```
 
 ---
 
 ## Roadmap / ideas
 
-Things to potentially add:
-
-- [ ] Support for image editing (not just generation) using Nano Banana's edit endpoint
-- [ ] Aspect ratio enforcement via SDK parameters once stable
-- [ ] Automatic image optimization (compression, WebP conversion) after generation
+- [ ] Google Search grounding integration (for current weather, news, sports imagery)
+- [ ] Image Search grounding (3.1 Flash only) for visual context
+- [ ] Multi-turn chat editing for iterative refinement
+- [ ] Batch API mode for 20+ images
+- [ ] Thinking mode controls (`minimal` vs `high`)
 - [ ] Style presets (luxury, SaaS, lifestyle, editorial) baked into prompt templates
-- [ ] Multi-image consistency (same character/product across multiple shots)
+- [ ] Multi-image consistency helper (same character/product across multiple shots)
+- [ ] Automatic image optimization (compression, WebP conversion) after generation
 - [ ] CLI mode so it can be used outside Claude Code
 
 PRs welcome.
